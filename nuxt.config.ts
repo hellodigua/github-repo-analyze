@@ -31,6 +31,7 @@ export default defineNuxtConfig({
 
   // 应用配置
   app: {
+    baseURL: process.env.NUXT_APP_BASE_URL || '/',
     head: {
       title: 'Github Repo Analyze',
       link: [
@@ -53,6 +54,11 @@ export default defineNuxtConfig({
       ],
       script: [],
     },
+  },
+
+  // GitHub Pages 部署配置
+  nitro: {
+    preset: 'github_pages',
   },
 
   // 运行时配置：GitHub GraphQL
