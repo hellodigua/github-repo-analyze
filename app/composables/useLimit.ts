@@ -1,14 +1,5 @@
 import { ref, onMounted } from 'vue'
-import { gqlRequest } from '~/utils/graphql'
-
-const LIMIT_QUERY = `
-  query getLimit {
-    rateLimit {
-      remaining
-      resetAt
-    }
-  }
-`
+import { githubRequest } from '~/utils/github'
 
 export const useLimit = () => {
   const loading = ref(false)
@@ -17,19 +8,22 @@ export const useLimit = () => {
   const gameover = ref<boolean | undefined>(undefined)
   const resetDate = ref<string | undefined>(undefined)
 
+  // 查询 REST API 的 core 限额，用于前端提示剩余额度
   const refresh = async () => {
     loading.value = true
     error.value = null
     try {
-      const data = await gqlRequest<{
-        rateLimit: { remaining: number; resetAt: string }
-      }>(LIMIT_QUERY)
-      const left = data?.rateLimit?.remaining ?? 0
-      const resetAt = data?.rateLimit?.resetAt
+      const { data } = await githubRequest<{
+        resources?: {
+          core?: { remaining: number; reset: number }
+        }
+      }>('/rate_limit')
+      const left = data?.resources?.core?.remaining ?? 0
+      const resetAt = data?.resources?.core?.reset
       remaining.value = left
       gameover.value = left === 0
       resetDate.value = resetAt
-        ? `${new Date(resetAt).toLocaleDateString()} ${new Date(resetAt).toLocaleTimeString()}`
+        ? `${new Date(resetAt * 1000).toLocaleDateString()} ${new Date(resetAt * 1000).toLocaleTimeString()}`
         : undefined
     } catch (err) {
       error.value = err as Error

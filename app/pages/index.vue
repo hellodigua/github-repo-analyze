@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
-import { ClientError } from 'graphql-request'
 import { useRoute } from '#imports'
+import { GitHubRequestError } from '~/utils/github'
 import { buildRepoUrl, getRepo, type RepoInfo } from '~/utils/repo'
 import { useStars } from '~/composables/useStars'
 import { useStarTotal } from '~/composables/useStarTotal'
@@ -80,15 +80,17 @@ watch(
   () => error.value,
   (err) => {
     if (!err) return
-    if (err instanceof ClientError) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const type = (err as any).response?.errors?.[0]?.type
-      if (type === 'NOT_FOUND') {
+    if (err instanceof GitHubRequestError) {
+      if (err.status === 404) {
         toast.add({ title: 'Repository not found. Please check the URL.', color: 'warning' })
         return
       }
-      if (err.response?.status === 401) {
+      if (err.status === 401) {
         toast.add({ title: 'Token is invalid or lacks permission.', color: 'error' })
+        return
+      }
+      if (err.status === 403) {
+        toast.add({ title: 'API rate limit reached. Add a token or try later.', color: 'warning' })
         return
       }
     }

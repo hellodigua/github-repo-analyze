@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { TOKEN_STORAGE_KEY } from '~/utils/github'
 import { getRepo, type RepoInfo } from '~/utils/repo'
 
 const props = defineProps<{
@@ -18,6 +19,13 @@ const emit = defineEmits<{
 }>()
 
 const toast = useToast()
+
+const tokenValue = ref('')
+
+onMounted(() => {
+  if (!import.meta.client) return
+  tokenValue.value = localStorage.getItem(TOKEN_STORAGE_KEY) || ''
+})
 
 const colorMode = useColorMode()
 const isDark = computed({
@@ -77,10 +85,26 @@ const handleClear = () => {
   inputValue.value = ''
   emit('clear')
 }
+
+const saveToken = () => {
+  if (!import.meta.client) return
+  const trimmed = tokenValue.value.trim()
+  if (trimmed) {
+    localStorage.setItem(TOKEN_STORAGE_KEY, trimmed)
+    toast.add({ title: 'Token saved.', color: 'success' })
+  } else {
+    localStorage.removeItem(TOKEN_STORAGE_KEY)
+    toast.add({ title: 'Token cleared.', color: 'success' })
+  }
+}
+
+const handleTokenKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Enter') saveToken()
+}
 </script>
 
 <template>
-  <header class="flex flex-col gap-6 md:flex-row md:items-start md:justify-between w-full h-[100px]">
+  <header class="flex flex-col gap-6 md:flex-row md:items-start md:justify-between w-full min-h-[100px]">
     <!-- Search Area with Glow Effect -->
     <div class="flex-1 max-w-2xl relative group">
       <!-- Glow backing -->
@@ -132,10 +156,31 @@ const handleClear = () => {
       </div>
 
       <!-- Helper text -->
-      <div class="absolute top-full left-0 mt-2 px-1 text-[11px] text-zinc-400 dark:text-zinc-500">
+      <div class="mt-2 px-1 text-[11px] text-zinc-400 dark:text-zinc-500">
         Press
         <span class="font-mono bg-zinc-100 dark:bg-white/10 px-1 rounded text-zinc-500 dark:text-zinc-400">Enter</span>
         to search
+      </div>
+
+      <!-- Token input -->
+      <div class="mt-4 flex flex-wrap items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+        <span class="flex items-center gap-1">
+          <UIcon name="i-heroicons-key" class="w-4 h-4" />
+          Token
+        </span>
+        <input
+          v-model="tokenValue"
+          type="password"
+          placeholder="GitHub token (optional)"
+          class="flex-1 min-w-[220px] bg-white dark:bg-[#121214] rounded-lg border border-zinc-200/60 dark:border-white/10 px-3 py-1.5 text-xs text-zinc-700 dark:text-zinc-200 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-400/30"
+          @keydown="handleTokenKeydown"
+        />
+        <button
+          class="px-3 py-1.5 rounded-lg border border-zinc-200/60 dark:border-white/10 text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/10 transition-colors"
+          @click="saveToken"
+        >
+          Save
+        </button>
       </div>
     </div>
 

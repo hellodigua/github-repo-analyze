@@ -1,10 +1,10 @@
 import { ref } from 'vue'
-import { gqlRequest } from '~/utils/graphql'
+import { githubRequest, getNextPageUrl, STAR_ACCEPT } from '~/utils/github'
 import { formatDateKey } from '~/utils/date'
 import type { RepoInfo } from '~/utils/repo'
 import type { DailyData } from '~/utils/chart'
 
-const CACHE_VERSION = 3
+const CACHE_VERSION = 4
 const CACHE_PREFIX = 'LOCAL_REPO_CACHE:'
 
 interface RepoCache {
@@ -14,21 +14,9 @@ interface RepoCache {
   daily: DailyData
 }
 
-const STARS_QUERY = `
-  query GetStars($name: String!, $owner: String!, $after: String) {
-    repository(name: $name, owner: $owner) {
-      stargazers(first: 100, after: $after, orderBy: { field: STARRED_AT, direction: ASC }) {
-        edges {
-          starredAt
-        }
-        pageInfo {
-          endCursor
-          hasNextPage
-        }
-      }
-    }
-  }
-`
+interface StargazerItem {
+  starred_at: string
+}
 
 const buildCacheKey = (repo: RepoInfo) => `${CACHE_PREFIX}${repo.owner.toLowerCase()}/${repo.name.toLowerCase()}`
 
@@ -66,7 +54,7 @@ export const useStars = () => {
   const error = ref<Error | null>(null)
   const currentRunId = ref(0)
 
-  // 入口：开始拉取（支持增量与强制刷新）
+  // 入口：开始拉取（使用 REST 全量分页，缓存命中则直接复用）
   const startLoadStars = async (
     repoInfo: RepoInfo & {
       forceRefresh?: boolean
@@ -80,8 +68,6 @@ export const useStars = () => {
     repo.value = { owner: repoInfo.owner, name: repoInfo.name }
 
     let cached: RepoCache | null = null
-    let after: string | null = null
-    let currentCursor: string | null = null
     let newestFetchedAt: string | null = null
 
     if (repoInfo.forceRefresh) {
@@ -91,69 +77,44 @@ export const useStars = () => {
       cached = readRepoCache(repoInfo)
       if (cached?.daily) {
         data.value = cached.daily
-        after = cached.endCursor || null
-        currentCursor = cached.endCursor || null
         newestFetchedAt = cached.lastFetchedAt || null
+        finished.value = true
+        loading.value = false
+        return
       } else {
         data.value = undefined
       }
     }
 
     try {
-      // ASC 分页拉取
-      while (true) {
-        const result = await gqlRequest<{
-          repository: {
-            stargazers: {
-              edges: Array<{ starredAt: string }>
-              pageInfo: { endCursor: string | null; hasNextPage: boolean }
-            }
-          }
-        }>(STARS_QUERY, {
-          owner: repoInfo.owner,
-          name: repoInfo.name,
-          after,
-        })
+      // REST 接口需要通过 Link 头分页，直至没有 next
+      // 每页拿到就合并并刷新 data，保证用户能逐步看到图表结果
+      const nextData: DailyData = {}
+      data.value = {}
+      let nextUrl = `/repos/${repoInfo.owner}/${repoInfo.name}/stargazers`
 
+      while (nextUrl) {
+        if (currentRunId.value !== runId) return
+        const { data: pageData, headers } = await githubRequest<StargazerItem[]>(nextUrl, {
+          accept: STAR_ACCEPT,
+          params: { per_page: '100' },
+        })
         if (currentRunId.value !== runId) return
 
-        const stargazers = result?.repository?.stargazers
-        const edges = stargazers?.edges || []
-        const pageInfo = stargazers?.pageInfo
-        const endCursor = pageInfo?.endCursor || null
-        const hasNextPage = Boolean(pageInfo?.hasNextPage)
-
-        if (!edges.length) {
-          break
-        }
-
-        const delta: Record<string, number> = {}
-
-        for (const { starredAt } of edges) {
-          // 更新最新时间
+        for (const item of pageData || []) {
+          const starredAt = item.starred_at
+          if (!starredAt) continue
           if (!newestFetchedAt || new Date(starredAt) > new Date(newestFetchedAt)) {
             newestFetchedAt = starredAt
           }
           const key = formatDateKey(new Date(starredAt))
-          delta[key] = (delta[key] || 0) + 1
+          const prev = nextData[key]?.count || 0
+          nextData[key] = { count: prev + 1 }
         }
 
-        // 增量更行 Data
-        if (Object.keys(delta).length) {
-          const nextData: DailyData = { ...(data.value || {}) }
-          Object.entries(delta).forEach(([key, count]) => {
-            const prev = nextData[key]?.count || 0
-            nextData[key] = { count: prev + count }
-          })
-          data.value = nextData
-        }
-
-        currentCursor = endCursor
-
-        if (!hasNextPage) {
-          break
-        }
-        after = endCursor
+        if (currentRunId.value !== runId) return
+        data.value = { ...nextData }
+        nextUrl = getNextPageUrl(headers.get('link'))
       }
 
       if (currentRunId.value !== runId) return
@@ -163,7 +124,7 @@ export const useStars = () => {
       writeRepoCache(repoInfo, {
         version: CACHE_VERSION,
         lastFetchedAt: newestFetchedAt,
-        endCursor: currentCursor,
+        endCursor: null,
         daily: data.value || {},
       })
     } catch (err) {

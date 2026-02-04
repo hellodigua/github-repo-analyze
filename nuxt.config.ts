@@ -36,8 +36,7 @@ export default defineNuxtConfig({
       title: 'Github Repo Analyze',
       link: [
         { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
-        { rel: 'shortcut icon', type: 'image/png', href: '/favicon.png' },
-        { rel: 'manifest', href: '/manifest.json' },
+        { rel: 'manifest', href: '' },
       ],
       meta: [
         { charset: 'utf-8' },
@@ -61,13 +60,13 @@ export default defineNuxtConfig({
     preset: 'github_pages',
   },
 
-  // 运行时配置：GitHub GraphQL
+  // 运行时配置：GitHub REST
   runtimeConfig: {
     githubToken: '',
-    githubGraphqlUrl: 'https://api.github.com/graphql',
+    githubApiBase: 'https://api.github.com',
     public: {
       githubToken: '',
-      githubGraphqlUrl: 'https://api.github.com/graphql',
+      githubApiBase: 'https://api.github.com',
     },
   },
 

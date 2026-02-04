@@ -44,8 +44,8 @@ jobs:
             echo "NUXT_APP_BASE_URL=/${{ github.event.repository.name }}/" >> "$GITHUB_ENV"
           fi
 
-      - name: Build static site
-        run: pnpm build
+      - name: Generate static site
+        run: pnpm generate
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

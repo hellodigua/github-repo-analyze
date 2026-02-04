@@ -1,16 +1,6 @@
 import { ref } from 'vue'
-import { gqlRequest } from '~/utils/graphql'
+import { githubRequest } from '~/utils/github'
 import { buildRepoUrl, type RepoInfo } from '~/utils/repo'
-
-const TOTAL_QUERY = `
-  query GetStarTotal($name: String!, $owner: String!) {
-    repository(name: $name, owner: $owner) {
-      stargazers {
-        totalCount
-      }
-    }
-  }
-`
 
 const totalCache = new Map<string, number>()
 
@@ -30,10 +20,10 @@ export const useStarTotal = () => {
     loading.value = true
     error.value = null
     try {
-      const data = await gqlRequest<{
-        repository: { stargazers: { totalCount: number } }
-      }>(TOTAL_QUERY, { owner: repo.owner, name: repo.name })
-      const count = data?.repository?.stargazers?.totalCount ?? null
+      const { data } = await githubRequest<{ stargazers_count: number }>(
+        `/repos/${repo.owner}/${repo.name}`
+      )
+      const count = data?.stargazers_count ?? null
       total.value = count
       if (typeof count === 'number') {
         totalCache.set(cacheKey, count)
