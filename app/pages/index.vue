@@ -127,10 +127,7 @@ const handleSelectHistory = (url: string) => {
     toast.add({ title: 'API limit reached. Try again later.', color: 'warning' })
     return
   }
-  if (finished.value && repo.value && repo.value.owner === repoInfo.owner && repo.value.name === repoInfo.name) {
-    toast.add({ title: 'This repo is up to date. Use “Force Refresh” to re-fetch.', color: 'success' })
-    return
-  }
+  if (finished.value && repo.value && repo.value.owner === repoInfo.owner && repo.value.name === repoInfo.name) return
   input.value = url
   selectedRepoUrl.value = url
   startLoadStars(repoInfo)

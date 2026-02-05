@@ -61,10 +61,7 @@ const handleSearch = () => {
     toast.add({ title: 'Loading... Please wait.', color: 'info' })
     return
   }
-  if (props.finished && isSameRepo(repo)) {
-    toast.add({ title: 'This repo is up to date. Use “Force Refresh” to re-fetch.', color: 'success' })
-    return
-  }
+  if (props.finished && isSameRepo(repo)) return
   emit('search', repo)
 }
 
@@ -107,11 +104,6 @@ const handleTokenKeydown = (event: KeyboardEvent) => {
   <header class="flex flex-col gap-6 md:flex-row md:items-start md:justify-between w-full min-h-[100px]">
     <!-- Search Area with Glow Effect -->
     <div class="flex-1 max-w-2xl relative group">
-      <!-- Glow backing -->
-      <div
-        class="absolute -inset-1 bg-[#24292f] rounded-2xl blur opacity-10 group-hover:opacity-20 transition duration-500 group-focus-within:opacity-25"
-      ></div>
-
       <div
         class="relative flex items-center bg-white dark:bg-[#121214] rounded-xl p-2 shadow-sm border border-zinc-200/50 dark:border-white/10 ring-1 ring-transparent group-focus-within:ring-zinc-500/30 transition-all duration-300"
       >
