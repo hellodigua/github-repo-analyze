@@ -69,7 +69,7 @@ const handleRemove = (event: MouseEvent, url: string) => {
         <div class="flex items-center gap-2.5 min-w-0">
           <img
             :src="`https://github.com/${item.owner}.png`"
-            class="w-5 h-5 rounded-full opacity-80 grayscale group-hover:grayscale-0 transition-all"
+            class="w-5 h-5 rounded-full opacity-80 transition-all"
             alt=""
           />
           <div class="flex flex-col items-start min-w-0">
