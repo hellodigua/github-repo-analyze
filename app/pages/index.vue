@@ -18,7 +18,7 @@ const initialTab = ref<'bar' | 'line' | 'area'>('bar')
 const { total, getTotalCount } = useStarTotal()
 const { repo, startLoadStars, data, loading, finished, error } = useStars()
 const { remaining, gameover, resetDate } = useLimit()
-const { history, addRepo, removeRepo } = useRepoHistory()
+const { history, addRepo, removeRepo, reorderHistory } = useRepoHistory()
 
 // 清空当前选中仓库的所有展示状态（输入框/图表/统计/持久化）
 const clearCurrentRepoState = () => {
@@ -143,6 +143,10 @@ const handleRemoveHistory = (url: string) => {
     clearCurrentRepoState()
   }
 }
+
+const handleReorderHistory = (urls: string[]) => {
+  reorderHistory(urls)
+}
 </script>
 
 <template>
@@ -167,6 +171,7 @@ const handleRemoveHistory = (url: string) => {
           :selected-url="selectedRepoUrl"
           @select="handleSelectHistory"
           @remove="handleRemoveHistory"
+          @reorder="handleReorderHistory"
         />
       </div>
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { VueDraggable } from 'vue-draggable-plus'
 import { getRepo } from '~/utils/repo'
 
 interface RepoItem {
@@ -15,22 +16,33 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'select' | 'remove', url: string): void
+  (e: 'reorder', urls: string[]): void
 }>()
 
-// 将历史地址转换为扁平列表
-const items = computed<RepoItem[]>(() => {
-  return props.history
+const toRepoItems = (urls: string[]): RepoItem[] =>
+  urls
     .map((url) => {
       const repo = getRepo(url)
       if (!repo) return null
-      return {
-        owner: repo.owner,
-        name: repo.name,
-        url,
-      }
+      return { owner: repo.owner, name: repo.name, url }
     })
     .filter((item): item is RepoItem => !!item)
-})
+
+const localItems = ref<RepoItem[]>(toRepoItems(props.history))
+
+watch(
+  () => props.history,
+  (urls) => {
+    localItems.value = toRepoItems(urls)
+  }
+)
+
+const handleDragEnd = () => {
+  emit(
+    'reorder',
+    localItems.value.map((item) => item.url)
+  )
+}
 
 const handleSelect = (url: string) => {
   emit('select', url)
@@ -53,9 +65,17 @@ const handleRemove = (event: MouseEvent, url: string) => {
       </span>
     </div>
 
-    <div v-if="items.length" class="flex-1 space-y-1 px-1 custom-scrollbar overflow-y-auto">
+    <VueDraggable
+      v-if="localItems.length"
+      v-model="localItems"
+      class="flex-1 space-y-1 px-1 custom-scrollbar overflow-y-auto"
+      handle=".drag-handle"
+      animation:150
+      ghost-class="opacity-30"
+      @end="handleDragEnd"
+    >
       <button
-        v-for="item in items"
+        v-for="item in localItems"
         :key="item.url"
         type="button"
         class="group w-full flex items-center justify-between px-3 py-2 text-sm rounded-lg transition-all duration-200 border border-transparent"
@@ -67,6 +87,12 @@ const handleRemove = (event: MouseEvent, url: string) => {
         @click="handleSelect(item.url)"
       >
         <div class="flex items-center gap-2.5 min-w-0">
+          <!-- Drag Handle -->
+          <div
+            class="drag-handle flex-shrink-0 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity text-zinc-400"
+          >
+            <UIcon name="i-heroicons-bars-2" class="w-3.5 h-3.5" />
+          </div>
           <img
             :src="`https://github.com/${item.owner}.png`"
             class="w-5 h-5 rounded-full opacity-80 transition-all"
@@ -87,7 +113,7 @@ const handleRemove = (event: MouseEvent, url: string) => {
           <UIcon name="i-heroicons-x-mark" class="w-3.5 h-3.5" />
         </div>
       </button>
-    </div>
+    </VueDraggable>
 
     <div v-else class="flex flex-col items-center justify-center flex-1 text-zinc-400 dark:text-zinc-600 text-xs gap-3">
       <div class="w-12 h-12 rounded-full bg-zinc-100 dark:bg-white/5 flex items-center justify-center">

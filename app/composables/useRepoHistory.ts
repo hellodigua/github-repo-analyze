@@ -48,11 +48,17 @@ export const useRepoHistory = () => {
     writeHistory(next)
   }
 
+  const reorderHistory = (newList: string[]) => {
+    history.value = newList
+    writeHistory(newList)
+  }
+
   const list = computed(() => history.value.filter((url) => getRepo(url)))
 
   return {
     history: list,
     addRepo,
     removeRepo,
+    reorderHistory,
   }
 }
