@@ -86,7 +86,7 @@ watch(
         return
       }
       if (err.status === 401) {
-        toast.add({ title: 'Token is invalid or lacks permission.', color: 'error' })
+        toast.add({ title: 'GitHub token is required or invalid.', color: 'error' })
         return
       }
       if (err.status === 403) {

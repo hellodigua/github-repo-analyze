@@ -10,7 +10,7 @@ Github Repo Analyze is a lightweight web tool that visualizes GitHub repository 
 - Interactive ECharts charts with zoom and toggles
 - Local cache and history for quick re-visits
 - Export chart image and raw JSON data
-- Optional token input to raise API rate limits
+- GitHub token input for star-history loading and higher API rate limits
 
 ## Tech Stack
 
@@ -39,7 +39,9 @@ Github Repo Analyze is a lightweight web tool that visualizes GitHub repository 
 ## Configuration
 
 - GitHub API base: `https://api.github.com`
-- Token (optional):
+- Token:
+  - Star-history loading uses GitHub GraphQL and requires a token.
+  - Repository total metadata can still be fetched without a token.
   - UI input (stored in localStorage)
   - Env: `NUXT_GITHUB_TOKEN=...` or `NUXT_PUBLIC_GITHUB_TOKEN=...`
 

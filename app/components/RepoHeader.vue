@@ -163,7 +163,7 @@ const handleTokenKeydown = (event: KeyboardEvent) => {
         <input
           v-model="tokenValue"
           type="password"
-          placeholder="GitHub token (optional)"
+          placeholder="GitHub token (required for star history)"
           class="flex-1 min-w-[220px] bg-white dark:bg-[#121214] rounded-lg border border-zinc-200/60 dark:border-white/10 px-3 py-1.5 text-xs text-zinc-700 dark:text-zinc-200 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-400/30"
           @keydown="handleTokenKeydown"
         />

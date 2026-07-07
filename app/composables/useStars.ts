@@ -1,25 +1,52 @@
 import { ref } from 'vue'
-import { githubRequest, getNextPageUrl, STAR_ACCEPT } from '~/utils/github'
+import { githubGraphqlRequest } from '~/utils/github'
 import { formatDateKey } from '~/utils/date'
 import type { RepoInfo } from '~/utils/repo'
 import type { DailyData } from '~/utils/chart'
 
-const CACHE_VERSION = 5
+const CACHE_VERSION = 6
 const CACHE_PREFIX = 'LOCAL_REPO_CACHE:'
 const PAGE_SIZE = 100
 
 interface RepoCache {
   version: number
-  lastPage: number
-  lastPageCount: number
+  lastCursor: string | null
   daily: DailyData
 }
 
-interface StargazerItem {
-  starred_at: string
+interface StargazerEdge {
+  starredAt?: string | null
+}
+
+interface StargazersPage {
+  repository?: {
+    stargazers?: {
+      edges?: StargazerEdge[]
+      pageInfo?: {
+        hasNextPage?: boolean
+        endCursor?: string | null
+      }
+    }
+  }
 }
 
 const buildCacheKey = (repo: RepoInfo) => `${CACHE_PREFIX}${repo.owner.toLowerCase()}/${repo.name.toLowerCase()}`
+
+const STARGAZERS_QUERY = `
+  query RepoStargazers($owner: String!, $name: String!, $cursor: String, $pageSize: Int!) {
+    repository(owner: $owner, name: $name) {
+      stargazers(first: $pageSize, after: $cursor, orderBy: { field: STARRED_AT, direction: ASC }) {
+        edges {
+          starredAt
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+    }
+  }
+`
 
 const readRepoCache = (repo: RepoInfo): RepoCache | null => {
   if (!import.meta.client) return null
@@ -28,7 +55,12 @@ const readRepoCache = (repo: RepoInfo): RepoCache | null => {
     if (!raw) return null
     const parsed = JSON.parse(raw)
     // Check version and essential fields
-    if (!parsed || parsed.version !== CACHE_VERSION || !parsed.daily) {
+    if (
+      !parsed ||
+      parsed.version !== CACHE_VERSION ||
+      !parsed.daily ||
+      !(typeof parsed.lastCursor === 'string' || parsed.lastCursor === null)
+    ) {
       return null
     }
     return parsed as RepoCache
@@ -70,60 +102,52 @@ export const useStars = () => {
 
     let cached: RepoCache | null = null
     let baseDaily: DailyData = {}
-    let startPage = 1
-    let skipCount = 0
-    let hasCachePage = false
+    let startCursor: string | null = null
+    let hasCache = false
 
     if (repoInfo.forceRefresh) {
       removeRepoCache(repoInfo)
       data.value = undefined
     } else {
       cached = readRepoCache(repoInfo)
-      if (
-        cached?.daily &&
-        typeof cached.lastPage === 'number' &&
-        typeof cached.lastPageCount === 'number'
-      ) {
-        // 命中缓存时先展示旧数据，再从上次最后一页开始增量拉取
+      if (cached?.daily && (typeof cached.lastCursor === 'string' || cached.lastCursor === null)) {
+        // 命中缓存时先展示旧数据，再从上次 GraphQL cursor 之后继续拉取新增 star。
         data.value = cached.daily
         baseDaily = { ...cached.daily }
-        startPage = Math.max(1, cached.lastPage)
-        skipCount = Math.max(0, cached.lastPageCount)
-        hasCachePage = true
+        startCursor = cached.lastCursor
+        hasCache = true
       } else {
         data.value = undefined
       }
     }
 
     try {
-      // REST 接口需要通过 Link 头分页，直至没有 next
+      // GitHub REST stargazers 在当前环境会对公开仓库返回隐藏式 404；
+      // GraphQL stargazers edges 仍能稳定返回 starredAt，并通过 cursor 做增量分页。
       // 每页拿到就合并并刷新 data，保证用户能逐步看到图表结果
       const nextData: DailyData = baseDaily
-      if (!hasCachePage) {
+      if (!hasCache) {
         data.value = { ...nextData }
       }
 
-      const path = `/repos/${repoInfo.owner}/${repoInfo.name}/stargazers`
-      let currentPage = startPage
+      let currentCursor = startCursor
       let hasNext = true
-      let lastPage = startPage
-      let lastPageCount = skipCount
+      let lastCursor = startCursor
 
       while (hasNext) {
         if (currentRunId.value !== runId) return
-        const { data: pageData, headers } = await githubRequest<StargazerItem[]>(path, {
-          accept: STAR_ACCEPT,
-          params: { per_page: String(PAGE_SIZE), page: String(currentPage) },
+        const pageData = await githubGraphqlRequest<StargazersPage>(STARGAZERS_QUERY, {
+          owner: repoInfo.owner,
+          name: repoInfo.name,
+          cursor: currentCursor,
+          pageSize: PAGE_SIZE,
         })
         if (currentRunId.value !== runId) return
 
-        // 增量更新：GitHub 返回按最早 -> 最新排序，缓存记录了上次最后一页的数量
-        // 首次请求时需要跳过已缓存的那一部分，只处理新增尾部数据
-        const safePageData = pageData || []
-        const startIndex = hasCachePage && currentPage === startPage ? Math.min(skipCount, safePageData.length) : 0
-        for (let idx = startIndex; idx < safePageData.length; idx += 1) {
-          const item = safePageData[idx]
-          const starredAt = item.starred_at
+        const stargazers = pageData.repository?.stargazers
+        const edges = stargazers?.edges || []
+        for (const item of edges) {
+          const starredAt = item.starredAt
           if (!starredAt) continue
           const key = formatDateKey(new Date(starredAt))
           const prev = nextData[key]?.count || 0
@@ -132,20 +156,10 @@ export const useStars = () => {
 
         if (currentRunId.value !== runId) return
         data.value = { ...nextData }
-        const nextUrl = getNextPageUrl(headers.get('link'))
-        lastPage = currentPage
-        lastPageCount = safePageData.length
-        if (!nextUrl) {
-          hasNext = false
-          break
-        }
-        try {
-          const parsed = new URL(nextUrl)
-          const nextPage = Number(parsed.searchParams.get('page'))
-          currentPage = Number.isFinite(nextPage) && nextPage > 0 ? nextPage : currentPage + 1
-        } catch {
-          currentPage += 1
-        }
+        const nextCursor = stargazers?.pageInfo?.endCursor || null
+        hasNext = Boolean(stargazers?.pageInfo?.hasNextPage && nextCursor)
+        lastCursor = nextCursor || lastCursor
+        currentCursor = nextCursor
       }
 
       if (currentRunId.value !== runId) return
@@ -154,8 +168,7 @@ export const useStars = () => {
       // Save Cache
       writeRepoCache(repoInfo, {
         version: CACHE_VERSION,
-        lastPage,
-        lastPageCount,
+        lastCursor,
         daily: data.value || {},
       })
     } catch (err) {

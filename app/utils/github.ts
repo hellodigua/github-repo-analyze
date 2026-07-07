@@ -16,6 +16,8 @@ export const TOKEN_STORAGE_KEY = 'GITHUB_TOKEN'
 
 const DEFAULT_ACCEPT = 'application/vnd.github+json'
 
+const getConfigString = (value: unknown) => (typeof value === 'string' ? value : '')
+
 const getStoredToken = () => {
   if (!import.meta.client) return ''
   try {
@@ -27,7 +29,18 @@ const getStoredToken = () => {
 
 const getBaseUrl = () => {
   const config = useRuntimeConfig()
-  return config.public?.githubApiBase || config.githubApiBase || 'https://api.github.com'
+  return (
+    getConfigString(config.public?.githubApiBase) || getConfigString(config.githubApiBase) || 'https://api.github.com'
+  )
+}
+
+const getGraphqlUrl = () => {
+  const config = useRuntimeConfig()
+  return (
+    getConfigString(config.public?.githubGraphqlUrl) ||
+    getConfigString(config.githubGraphqlUrl) ||
+    'https://api.github.com/graphql'
+  )
 }
 
 const buildUrl = (path: string, params?: Record<string, string>) => {
@@ -42,7 +55,7 @@ const buildUrl = (path: string, params?: Record<string, string>) => {
 
 const resolveToken = (explicitToken?: string) => {
   const config = useRuntimeConfig()
-  const runtimeToken = config.public?.githubToken || config.githubToken || ''
+  const runtimeToken = getConfigString(config.public?.githubToken) || getConfigString(config.githubToken)
   const storedToken = getStoredToken()
   return (explicitToken || storedToken || runtimeToken).trim()
 }
@@ -95,4 +108,47 @@ export const githubRequest = async <T>(
   }
 
   return { data: payload as T, headers: response.headers }
+}
+
+export const githubGraphqlRequest = async <T>(
+  query: string,
+  variables?: Record<string, unknown>,
+  options?: {
+    token?: string
+  }
+): Promise<T> => {
+  // GraphQL 是当前获取 starredAt 的可靠路径；这里复用本地 token 解析，避免 UI 保存后 REST/GraphQL 行为不一致。
+  const token = resolveToken(options?.token)
+  if (!token) {
+    throw new GitHubRequestError(401, 'GitHub token is required for GraphQL requests')
+  }
+
+  const response = await fetch(getGraphqlUrl(), {
+    method: 'POST',
+    headers: {
+      Accept: DEFAULT_ACCEPT,
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ query, variables }),
+  })
+
+  const payload = await response.json().catch(() => null)
+
+  if (!response.ok) {
+    const message = payload?.message || response.statusText || 'GraphQL request failed'
+    const documentationUrl = payload?.documentation_url
+    throw new GitHubRequestError(response.status, message, documentationUrl)
+  }
+
+  if (Array.isArray(payload?.errors) && payload.errors.length > 0) {
+    const message = payload.errors
+      .map((item: { message?: string }) => item?.message)
+      .filter(Boolean)
+      .join('; ')
+    const isNotFound = payload.errors.some((item: { type?: string }) => item?.type === 'NOT_FOUND')
+    throw new GitHubRequestError(isNotFound ? 404 : 400, message || 'GraphQL request failed')
+  }
+
+  return payload?.data as T
 }
