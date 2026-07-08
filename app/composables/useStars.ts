@@ -7,10 +7,12 @@ import type { DailyData } from '~/utils/chart'
 const CACHE_VERSION = 6
 const CACHE_PREFIX = 'LOCAL_REPO_CACHE:'
 const PAGE_SIZE = 100
+const CACHE_FRESH_MS = 30 * 60 * 1000
 
 interface RepoCache {
   version: number
   lastCursor: string | null
+  cachedAt?: number
   daily: DailyData
 }
 
@@ -32,6 +34,8 @@ interface StargazersPage {
 
 const buildCacheKey = (repo: RepoInfo) => `${CACHE_PREFIX}${repo.owner.toLowerCase()}/${repo.name.toLowerCase()}`
 
+const canUseLocalStorage = () => typeof localStorage !== 'undefined'
+
 const STARGAZERS_QUERY = `
   query RepoStargazers($owner: String!, $name: String!, $cursor: String, $pageSize: Int!) {
     repository(owner: $owner, name: $name) {
@@ -49,7 +53,7 @@ const STARGAZERS_QUERY = `
 `
 
 const readRepoCache = (repo: RepoInfo): RepoCache | null => {
-  if (!import.meta.client) return null
+  if (!canUseLocalStorage()) return null
   try {
     const raw = localStorage.getItem(buildCacheKey(repo))
     if (!raw) return null
@@ -70,14 +74,17 @@ const readRepoCache = (repo: RepoInfo): RepoCache | null => {
 }
 
 const writeRepoCache = (repo: RepoInfo, payload: RepoCache) => {
-  if (!import.meta.client) return
+  if (!canUseLocalStorage()) return
   localStorage.setItem(buildCacheKey(repo), JSON.stringify(payload))
 }
 
 const removeRepoCache = (repo: RepoInfo) => {
-  if (!import.meta.client) return
+  if (!canUseLocalStorage()) return
   localStorage.removeItem(buildCacheKey(repo))
 }
+
+const isFreshCache = (cached: RepoCache) =>
+  typeof cached.cachedAt === 'number' && Date.now() - cached.cachedAt < CACHE_FRESH_MS
 
 export const useStars = () => {
   const loading = ref(false)
@@ -87,7 +94,7 @@ export const useStars = () => {
   const error = ref<Error | null>(null)
   const currentRunId = ref(0)
 
-  // 入口：开始拉取（使用 REST 分页，缓存命中时进行增量更新）
+  // 入口：开始拉取（使用 GraphQL 分页，缓存新鲜时直接复用，过期后再增量检查）
   const startLoadStars = async (
     repoInfo: RepoInfo & {
       forceRefresh?: boolean
@@ -116,6 +123,11 @@ export const useStars = () => {
         baseDaily = { ...cached.daily }
         startCursor = cached.lastCursor
         hasCache = true
+        if (isFreshCache(cached)) {
+          finished.value = true
+          loading.value = false
+          return
+        }
       } else {
         data.value = undefined
       }
@@ -169,6 +181,7 @@ export const useStars = () => {
       writeRepoCache(repoInfo, {
         version: CACHE_VERSION,
         lastCursor,
+        cachedAt: Date.now(),
         daily: data.value || {},
       })
     } catch (err) {

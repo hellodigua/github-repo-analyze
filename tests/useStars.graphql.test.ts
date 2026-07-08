@@ -70,4 +70,31 @@ describe('useStars GraphQL loader', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(fetchMock.mock.calls.every(([url]) => String(url) === 'https://api.github.com/graphql')).toBe(true)
   })
+
+  it('uses fresh local cache without requesting GitHub again', async () => {
+    localStorage.setItem(
+      'LOCAL_REPO_CACHE:chatlab/chatlab',
+      JSON.stringify({
+        version: 6,
+        lastCursor: 'cursor-2',
+        cachedAt: Date.now(),
+        daily: {
+          '2025-12-22': { count: 2 },
+        },
+      })
+    )
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const stars = useStars()
+    await stars.startLoadStars({ owner: 'ChatLab', name: 'ChatLab' })
+
+    expect(stars.error.value).toBeNull()
+    expect(stars.finished.value).toBe(true)
+    expect(stars.loading.value).toBe(false)
+    expect(stars.data.value).toEqual({
+      '2025-12-22': { count: 2 },
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
 })
